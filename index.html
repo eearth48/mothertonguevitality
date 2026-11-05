@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas Vitalitas Bahasa Nusantara 3D - BPS Data</title>
+
+  <!-- MapLibre GL JS CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- Turf.js untuk Geoprocessing Spasial -->
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      position: relative;
+    }
+
+    /* ========================================================
+       EFEK LAUT BERADA DI BELAKANG PETA (Z-INDEX: 0)
+       ======================================================== */
+    .ocean-feather-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      background: linear-gradient(
+        to bottom,
+        #f8fafc 0%,
+        #f8fafc 24%,
+        #e0f2fe 48%,
+        #bae6fd 75%,
+        #7dd3fc 100%
+      );
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: transparent !important;
+    }
+
+    /* ========================================================
+       TOMBOL PENGALIH BAHASA (BILINGUAL TOGGLE)
+       ======================================================== */
+    .lang-switcher {
+      position: absolute;
+      top: 24px;
+      left: 40px;
+      z-index: 30;
+      display: flex;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid #cbd5e1;
+      border-radius: 20px;
+      padding: 3px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+    }
+    .lang-btn {
+      border: none;
+      background: transparent;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .lang-btn.active {
+      background: #0f172a;
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+    }
+
+    /* ========================================================
+       SISI KIRI: EDITORIAL NARRATIVE
+       ======================================================== */
+    .narrative-editorial-left {
+      position: absolute;
+      top: 68px;
+      left: 40px;
+      z-index: 15;
+      width: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+      pointer-events: none;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .narrative-editorial-left.hidden {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    .panel-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .panel-kicker::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      background: #0f172a;
+      border-radius: 50%;
+    }
+    .narrative-editorial-left h1 {
+      font-size: 32px;
+      font-weight: 900;
+      color: #0f172a;
+      line-height: 1.15;
+      letter-spacing: -0.6px;
+      margin-bottom: 12px;
+    }
+    .narrative-lead {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .biome-stats {
+      display: flex;
+      gap: 20px;
+      padding: 12px 0;
+      border-top: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      width: 100%;
+      margin-bottom: 16px;
+    }
+    .b-stat {
+      display: flex;
+      flex-direction: column;
+    }
+    .b-stat .num {
+      font-size: 17px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .b-stat .lbl {
+      font-size: 9.5px;
+      color: #64748b;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .editorial-note {
+      font-size: 11.5px;
+      color: #64748b;
+      line-height: 1.5;
+      border-left: 3px solid #0f172a;
+      padding-left: 10px;
+    }
+
+    /* ========================================================
+       KONTROL NAVIGASI
+       ======================================================== */
+    .map-custom-controls {
+      position: absolute;
+      bottom: 36px;
+      left: 40px;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctrl-btn {
+      width: 38px;
+      height: 38px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      transition: all 0.2s ease;
+      font-size: 16px;
+      font-weight: bold;
+      user-select: none;
+    }
+    .ctrl-btn:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+      transform: translateY(-1px);
+    }
+
+    /* ========================================================
+       EDITORIAL PUBLIKASI KANAN
+       ======================================================== */
+    .magazine-story-container {
+      position: absolute;
+      top: 40px;
+      right: 40px;
+      width: 400px;
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      text-align: right;
+      pointer-events: none;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .magazine-story-container.hidden {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    .mag-issue-tag {
+      font-size: 10.5px;
+      letter-spacing: 2px;
+      font-weight: 800;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .mag-title {
+      font-size: 30px;
+      font-weight: 900;
+      line-height: 1.15;
+      letter-spacing: -0.5px;
+      color: #0f172a;
+      margin-bottom: 14px;
+    }
+    .mag-pullquote {
+      font-size: 13.5px;
+      font-style: italic;
+      line-height: 1.55;
+      color: #334155;
+      border-right: 3px solid #0f172a;
+      padding-right: 14px;
+      margin-bottom: 14px;
+      max-width: 360px;
+    }
+    .mag-body-text {
+      font-size: 12px;
+      line-height: 1.65;
+      color: #64748b;
+      max-width: 350px;
+      margin-bottom: 14px;
+    }
+    .metadata-credits-box {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+      border-top: 1px dashed #cbd5e1;
+      padding-top: 10px;
+      width: 100%;
+      font-size: 10px;
+      color: #64748b;
+      font-family: monospace;
+    }
+    .challenge-tag {
+      margin-top: 4px;
+      font-weight: 800;
+      color: #0f172a;
+      font-size: 10.5px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ========================================================
+       WIDGET ATAS TENGAH: LEGENDA, SKALA DINAMIS & ARAH UTARA
+       ======================================================== */
+    .top-center-cluster {
+      position: absolute;
+      top: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .map-legend-box {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid #cbd5e1;
+      border-radius: 30px;
+      padding: 6px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #475569;
+      box-shadow: 0 4px 15px rgba(15, 23, 42, 0.05);
+    }
+    .legend-bar {
+      width: 100px;
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #cbd5e1 0%, #0f172a 100%);
+    }
+
+    .scale-north-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 3px 12px 3px 10px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    }
+
+    .north-arrow-box {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9.5px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: 0.5px;
+    }
+    .north-compass-icon {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.2s ease-out;
+    }
+
+    .dynamic-scale-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .scale-ticks-container {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 8px;
+      font-weight: 700;
+      color: #64748b;
+      font-family: monospace;
+      padding: 0 1px;
+    }
+    .scale-bar-line {
+      height: 3px;
+      background: #0f172a;
+      border-left: 1.5px solid #0f172a;
+      border-right: 1.5px solid #0f172a;
+      transition: width 0.25s ease;
+    }
+
+    /* ========================================================
+       PANEL LINIMASA SURVEI BPS (POSISI TICKS DIPERBAIKI)
+       ======================================================== */
+    .timeline-container {
+      position: absolute;
+      bottom: 30px;
+      left: 100px;
+      z-index: 20;
+      width: 360px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 14px 18px;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .timeline-badge {
+      font-size: 10px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .timeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-play {
+      background: #0f172a;
+      border: none;
+      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      cursor: pointer;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .btn-play:hover { background: #334155; }
+
+    /* Wadah khusus slider dan label agar sejajar presisi */
+    .slider-track-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .time-slider {
+      width: 100%;
+      height: 6px;
+      accent-color: #0f172a;
+      cursor: pointer;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Ticks dengan posisi absolut tepat di bawah titik step slider (0/3, 1/3, 2/3, 3/3) */
+    .timeline-ticks {
+      position: relative;
+      width: 100%;
+      height: 16px;
+      margin-top: 6px;
+    }
+    .timeline-ticks span {
+      position: absolute;
+      transform: translateX(-50%);
+      font-size: 10px;
+      font-weight: 700;
+      color: #64748b;
+      user-select: none;
+    }
+    .timeline-ticks span:nth-child(1) { left: 8px; }
+    .timeline-ticks span:nth-child(2) { left: calc(8px + (100% - 16px) * 0.3333); }
+    .timeline-ticks span:nth-child(3) { left: calc(8px + (100% - 16px) * 0.6666); }
+    .timeline-ticks span:nth-child(4) { left: calc(100% - 8px); }
+
+    /* ========================================================
+       SIDEBAR DATA DETAIL PROVINSI
+       ======================================================== */
+    .sidebar-panel {
+      position: absolute;
+      top: 30px;
+      right: 30px;
+      bottom: 30px;
+      width: 420px;
+      z-index: 100;
+      background: #ffffff;
+      border-radius: 14px;
+      border: 1px solid #cbd5e1;
+      box-shadow: -10px 20px 40px rgba(15, 23, 42, 0.12);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(470px);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    .sidebar-panel.open {
+      transform: translateX(0);
+    }
+    .sidebar-header {
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      position: relative;
+      background: #f8fafc;
+    }
+    .header-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .sidebar-header span.tag {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      color: #64748b;
+      text-transform: uppercase;
+    }
+    .sidebar-header h2 {
+      font-size: 20px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+    }
+    .sidebar-header p.sub-info {
+      font-size: 11.5px;
+      color: #475569;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+    .close-btn {
+      width: 28px;
+      height: 28px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #475569;
+    }
+    .close-btn:hover { background: #f1f5f9; color: #0f172a; }
+
+    .vitality-hero-box {
+      padding: 16px 22px;
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .vitality-pct-large {
+      font-size: 34px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .vitality-pct-label {
+      font-size: 10px;
+      color: #64748b;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .status-badge {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .badge-aman { background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; }
+    .badge-rentan { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+    .badge-kritis { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+
+    .scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dialect-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .dialect-card:hover {
+      border-color: #0f172a;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+    .dialect-card.selected {
+      border-color: #0f172a !important;
+      background: #f8fafc !important;
+      box-shadow: 0 0 0 1px #0f172a;
+    }
+    .dialect-card.dimmed { opacity: 0.35; }
+
+    .dialect-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .dialect-name {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .dialect-family {
+      font-size: 10.5px;
+      font-style: italic;
+      color: #64748b;
+    }
+
+    .dialect-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 6px;
+      border-top: 1px dashed #e2e8f0;
+      padding-top: 6px;
+      font-size: 10px;
+    }
+    .dg-item span.lbl { color: #64748b; font-size: 8.5px; font-weight: 700; text-transform: uppercase; display: block; }
+    .dg-item span.val { color: #0f172a; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <!-- LAYER BACKGROUND LAUT DITARUH DI DASAR (Z-INDEX 0) -->
+  <div class="ocean-feather-backdrop"></div>
+
+  <!-- TOMBOL PENGALIH BAHASA -->
+  <div class="lang-switcher">
+    <button class="lang-btn active" id="btn-lang-id" onclick="setLanguage('id')">ID</button>
+    <button class="lang-btn" id="btn-lang-en" onclick="setLanguage('en')">EN</button>
+  </div>
+
+  <!-- Sisi Kiri: Editorial Narrative -->
+  <div class="narrative-editorial-left" id="editorial-left">
+    <div class="panel-kicker" id="txt-left-kicker">Statistik Demografi & Bahasa BPS</div>
+    <h1 id="txt-left-title">Vitalitas Tutur<br>Nusantara</h1>
+    
+    <p class="narrative-lead" id="txt-left-lead">
+      Peta elevasi 3D persentase penduduk usia 10 tahun ke atas yang aktif bertutur menggunakan bahasa daerah di ranah domestik maupun pergaulan sosial.
+    </p>
+
+    <div class="biome-stats">
+      <div class="b-stat">
+        <span class="num">718+</span>
+        <span class="lbl" id="txt-stat-lang">Bahasa Daerah</span>
+      </div>
+      <div class="b-stat">
+        <span class="num">38</span>
+        <span class="lbl" id="txt-stat-prov">Provinsi Dicakup</span>
+      </div>
+      <div class="b-stat">
+        <span class="num">4 Periode</span>
+        <span class="lbl" id="txt-stat-periods">Survei BPS</span>
+      </div>
+    </div>
+
+    <div class="editorial-note" id="txt-left-note">
+      Ketinggian balok ekstrusi merepresentasikan persentase penutur aktif (rasio 1% = 1.000 meter elevasi 3D). Garis koordinat WGS 84 beradaptasi secara dinamis mengikuti skala zoom.
+    </div>
+  </div>
+
+  <!-- CLUSTER ATAS TENGAH: LEGENDA, SKALA DINAMIS, DAN ARAH UTARA -->
+  <div class="top-center-cluster" id="top-center-cluster">
+    <div class="map-legend-box" id="map-legend">
+      <span id="txt-legend-low">Vitalitas Rendah (25%)</span>
+      <div class="legend-bar"></div>
+      <span id="txt-legend-high">Tinggi (95%)</span>
+    </div>
+
+    <div class="scale-north-row" id="scale-north-row">
+      <div class="north-arrow-box" title="Arah Utara">
+        <svg class="north-compass-icon" id="north-arrow-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 16 11 12 9 8 11 12 2" fill="#0f172a" stroke="none" />
+          <polygon points="12 22 16 13 12 15 8 13 12 22" fill="#cbd5e1" stroke="none" />
+        </svg>
+        <span>N</span>
+      </div>
+
+      <div class="dynamic-scale-box">
+        <div class="scale-ticks-container">
+          <span>0</span>
+          <span id="scale-label-dist">500 km</span>
+        </div>
+        <div class="scale-bar-line" id="scale-bar-line" style="width: 80px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tombol Navigasi -->
+  <div class="map-custom-controls">
+    <button class="ctrl-btn" onclick="zoomInMap()" title="Perbesar (Zoom In)">＋</button>
+    <button class="ctrl-btn" onclick="zoomOutMap()" title="Perkecil (Zoom Out)">－</button>
+    <button class="ctrl-btn" onclick="resetView()" title="Reset Tampilan (Reset View)">↺</button>
+  </div>
+
+  <!-- Sisi Kanan: Editorial Storytelling Majalah dengan Metadata & Credit -->
+  <div class="magazine-story-container" id="magazine-story">
+    <span class="mag-issue-tag" id="txt-right-tag">DOKUMENTASI STATISTIK SOSIAL</span>
+    <h2 class="mag-title" id="txt-right-title">Ketahanan Bahasa<br>di Ranah Domestik</h2>
+    <p class="mag-pullquote" id="txt-right-quote">
+      "Penggunaan bahasa daerah di rumah dan pergaulan menjadi benteng pertahanan terakhir transmisi antargenerasi di tengah percepatan konvergensi bahasa nasional."
+    </p>
+    <p class="mag-body-text" id="txt-right-body">
+      Berdasarkan data Badan Pusat Statistik (Indikator 2526), kantong-kantong tradisi lisan di kepulauan timur dan wilayah pedalaman menunjukkan persistensi tinggi, sementara kawasan urban metropolitan mengalami penurunan signifikan.
+    </p>
+
+    <div class="metadata-credits-box">
+      <div id="txt-meta-src">Data: BPS RI (Susenas MSBP) • Indikator 2526</div>
+      <div id="txt-meta-crs">Sistem Koordinat: WGS 84 (EPSG:4326)</div>
+      <div class="challenge-tag">#30daymapchallenge | vidya</div>
+    </div>
+  </div>
+
+  <!-- Panel Linimasa BPS (Posisi Angka Presisi di Titik Step) -->
+  <div class="timeline-container" id="timeline-container">
+    <div class="timeline-header">
+      <span><span id="txt-tl-lbl">Susenas BPS (Bahasa Daerah)</span>: <b id="timeline-year-text" style="color:#0f172a;">2024</b></span>
+      <span class="timeline-badge" id="timeline-status-badge">Kondisi Terkini</span>
+    </div>
+    
+    <div class="timeline-controls">
+      <button class="btn-play" id="btn-play-pause" onclick="togglePlayPause()" title="Putar Otomatis">▶</button>
+      
+      <div class="slider-track-wrap">
+        <input type="range" min="0" max="3" step="1" value="2" class="time-slider" id="timeline-slider" oninput="onTimelineChange(this.value)">
+        <div class="timeline-ticks">
+          <span>2018</span>
+          <span>2021</span>
+          <span>2024</span>
+          <span>2025</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Kanan: Sidebar Detail Provinsi -->
+  <aside class="sidebar-panel" id="sidebar-panel">
+    <div class="sidebar-header">
+      <div class="header-top-row">
+        <span class="tag" id="txt-sb-tag">Profil Data Wilayah</span>
+        <button class="close-btn" onclick="resetView()" title="Tutup">✕</button>
+      </div>
+      <h2 id="sb-prov-name">-</h2>
+      <p class="sub-info" id="sb-sub-info">-</p>
+    </div>
+
+    <div class="vitality-hero-box">
+      <div>
+        <div class="vitality-pct-large" id="sb-pct-val">- %</div>
+        <div class="vitality-pct-label" id="txt-sb-pct-lbl">Penggunaan di Rumah & Pergaulan</div>
+      </div>
+      <div style="text-align: right;">
+        <span class="status-badge" id="sb-status-badge">Terpantau</span>
+        <div style="font-size: 10px; color: #64748b; margin-top: 4px;" id="sb-year-lbl">Tahun 2024</div>
+      </div>
+    </div>
+
+    <div class="scroll-body">
+      <div style="font-size: 10px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;" id="txt-sb-subhead">
+        Ragam Tutur & Bahasa Lokal Utama:
+      </div>
+      <div id="dialect-list-container" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    </div>
+  </aside>
+
+  <!-- KANVAS MAPLIBRE DI LAYER ATAS (Z-INDEX 1) -->
+  <div id="map"></div>
+
+  <script>
+    var currentLang = 'id';
+    var i18n = {
+      id: {
+        leftKicker: "Statistik Demografi & Bahasa BPS",
+        leftTitle: "Vitalitas Tutur<br>Nusantara",
+        leftLead: "Peta elevasi 3D persentase penduduk usia 10 tahun ke atas yang aktif bertutur menggunakan bahasa daerah di ranah domestik maupun pergaulan sosial.",
+        statLang: "Bahasa Daerah",
+        statProv: "Provinsi Dicakup",
+        statPeriods: "Survei BPS",
+        leftNote: "Ketinggian balok ekstrusi merepresentasikan persentase penutur aktif (rasio 1% = 1.000 meter elevasi 3D). Garis koordinat WGS 84 beradaptasi secara dinamis mengikuti skala zoom.",
+        legendLow: "Vitalitas Rendah (25%)",
+        legendHigh: "Tinggi (95%)",
+        rightTag: "DOKUMENTASI STATISTIK SOSIAL",
+        rightTitle: "Ketahanan Bahasa<br>di Ranah Domestik",
+        rightQuote: '"Penggunaan bahasa daerah di rumah dan pergaulan menjadi benteng pertahanan terakhir transmisi antargenerasi di tengah percepatan konvergensi bahasa nasional."',
+        rightBody: "Berdasarkan data Badan Pusat Statistik (Indikator 2526), kantong-kantong tradisi lisan di kepulauan timur dan wilayah pedalaman menunjukkan persistensi tinggi, sementara kawasan urban metropolitan mengalami penurunan signifikan.",
+        metaSrc: "Data: BPS RI (Susenas MSBP) • Indikator 2526",
+        metaCrs: "Sistem Koordinat: WGS 84 (EPSG:4326)",
+        tlLbl: "Susenas BPS (Bahasa Daerah)",
+        badgeCurrent: "Kondisi Terkini",
+        badgeLatest: "Proyeksi Mutakhir",
+        badgeHistorical: "Survei",
+        sbTag: "Profil Data Wilayah",
+        sbPctLbl: "Penggunaan di Rumah & Pergaulan",
+        sbSubhead: "Ragam Tutur & Bahasa Lokal Utama:",
+        statusHigh: "Tinggi (Dominan)",
+        statusMid: "Menengah (Transisi)",
+        statusLow: "Rendah (Urban)",
+        estSpeaker: "Estimasi Penutur",
+        barHeight: "Tinggi Balok 3D",
+        family: "Rumpun",
+        surveyYearPrefix: "Survei BPS "
+      },
+      en: {
+        leftKicker: "BPS Demographic & Language Statistics",
+        leftTitle: "Nusantara Mother<br>Tongue Vitality",
+        leftLead: "3D extruded visualization of the percentage of population aged 10+ actively speaking indigenous mother tongues within domestic households and daily social spheres.",
+        statLang: "Indigenous Tongues",
+        statProv: "Provinces Mapped",
+        statPeriods: "BPS Surveys",
+        leftNote: "Extrusion height denotes active speaker percentage (scale: 1% = 1,000 meters 3D elevation). WGS 84 graticule adapts dynamically across zoom levels.",
+        legendLow: "Low Vitality (25%)",
+        legendHigh: "High (95%)",
+        rightTag: "SOCIAL DEMOGRAPHIC REPORT",
+        rightTitle: "Indigenous Language<br>Domestic Resilience",
+        rightQuote: '"The continued spoken use of local vernaculars at home remains the primary pillar of intergenerational linguistic transmission amidst national language unification."',
+        rightBody: "Based on Statistics Indonesia (BPS Indicator 2526), oral linguistic strongholds across eastern archipelagoes and highlands preserve high vitality, whereas metropolitan western provinces experience rapid language shifts.",
+        metaSrc: "Data Source: BPS-Statistics Indonesia • Indicator 2526",
+        metaCrs: "Spatial Reference: WGS 84 (EPSG:4326)",
+        tlLbl: "BPS Survey (Mother Tongue)",
+        badgeCurrent: "Current State",
+        badgeLatest: "Latest Projection",
+        badgeHistorical: "Survey",
+        sbTag: "Regional Data Profile",
+        sbPctLbl: "Domestic & Social Usage",
+        sbSubhead: "Major Vernacular & Dialect Groups:",
+        statusHigh: "High (Robust)",
+        statusMid: "Medium (Transition)",
+        statusLow: "Low (Urban Shift)",
+        estSpeaker: "Estimated Speakers",
+        barHeight: "3D Column Height",
+        family: "Family",
+        surveyYearPrefix: "BPS Survey "
+      }
+    };
+
+    function setLanguage(lang) {
+      currentLang = lang;
+      document.getElementById('btn-lang-id').classList.toggle('active', lang === 'id');
+      document.getElementById('btn-lang-en').classList.toggle('active', lang === 'en');
+
+      var t = i18n[lang];
+      document.getElementById('txt-left-kicker').innerText = t.leftKicker;
+      document.getElementById('txt-left-title').innerHTML = t.leftTitle;
+      document.getElementById('txt-left-lead').innerText = t.leftLead;
+      document.getElementById('txt-stat-lang').innerText = t.statLang;
+      document.getElementById('txt-stat-prov').innerText = t.statProv;
+      document.getElementById('txt-stat-periods').innerText = t.statPeriods;
+      document.getElementById('txt-left-note').innerText = t.leftNote;
+
+      document.getElementById('txt-legend-low').innerText = t.legendLow;
+      document.getElementById('txt-legend-high').innerText = t.legendHigh;
+
+      document.getElementById('txt-right-tag').innerText = t.rightTag;
+      document.getElementById('txt-right-title').innerHTML = t.rightTitle;
+      document.getElementById('txt-right-quote').innerText = t.rightQuote;
+      document.getElementById('txt-right-body').innerText = t.rightBody;
+      document.getElementById('txt-meta-src').innerText = t.metaSrc;
+      document.getElementById('txt-meta-crs').innerText = t.metaCrs;
+
+      document.getElementById('txt-tl-lbl').innerText = t.tlLbl;
+      document.getElementById('txt-sb-tag').innerText = t.sbTag;
+      document.getElementById('txt-sb-pct-lbl').innerText = t.sbPctLbl;
+      document.getElementById('txt-sb-subhead').innerText = t.sbSubhead;
+
+      var year = timelineYears[currentYearIndex];
+      var badge = document.getElementById('timeline-status-badge');
+      if (year === "2025") {
+        badge.innerText = t.badgeLatest;
+      } else if (year === "2024") {
+        badge.innerText = t.badgeCurrent;
+      } else {
+        badge.innerText = t.badgeHistorical + " " + year;
+      }
+
+      if (selectedProvinsi && currentProvinceMeta) {
+        renderSidebarContent(currentProvinceMeta.code);
+      }
+      
+      updateDynamicGraticule();
+      updateDynamicScaleAndNorth();
+    }
+
+    var BPS_API_KEY = "MASUKKAN_KEY_BPS_ANDA";
+    var BPS_ENDPOINTS = [
+      { year: "2018", thId: "118" },
+      { year: "2021", thId: "121" },
+      { year: "2024", thId: "124" },
+      { year: "2025", thId: "125" }
+    ];
+
+    var BPS_PROV_MAP = {
+      "11": { name: "ACEH", region: "Sumatera Bagian Utara", dialects: [{ name: "Bahasa Aceh", fam: "Chamik", status: "Dominan", pct: 72 }, { name: "Bahasa Gayo", fam: "Austronesia", status: "Lokal", pct: 21 }, { name: "Bahasa Alas", fam: "Kluet-Alas", status: "Minoritas", pct: 7 }] },
+      "12": { name: "SUMATERA UTARA", region: "Sumatera Bagian Utara", dialects: [{ name: "Bahasa Batak Toba", fam: "Batak", status: "Dominan", pct: 45 }, { name: "Bahasa Mandailing", fam: "Batak", status: "Lokal", pct: 28 }, { name: "Bahasa Nias", fam: "Bari-Nias", status: "Lokal", pct: 18 }] },
+      "13": { name: "SUMATERA BARAT", region: "Sumatera Barat & Pesisir", dialects: [{ name: "Bahasa Minangkabau", fam: "Melayik", status: "Dominan", pct: 88 }, { name: "Bahasa Mentawai", fam: "Mentawai", status: "Lokal", pct: 12 }] },
+      "14": { name: "RIAU", region: "Sumatera Timur", dialects: [{ name: "Bahasa Melayu Riau", fam: "Melayik", status: "Dominan", pct: 74 }, { name: "Bahasa Sakai", fam: "Aslian", status: "Terancam", pct: 6 }] },
+      "15": { name: "JAMBI", region: "Sumatera Tengah", dialects: [{ name: "Bahasa Melayu Jambi", fam: "Melayik", status: "Dominan", pct: 78 }, { name: "Bahasa Kerinci", fam: "Melayik", status: "Lokal", pct: 22 }] },
+      "16": { name: "SUMATERA SELATAN", region: "Sumatera Selatan", dialects: [{ name: "Bahasa Palembang (Musi)", fam: "Melayik", status: "Dominan", pct: 68 }, { name: "Bahasa Komering", fam: "Lampungik", status: "Lokal", pct: 20 }] },
+      "17": { name: "BENGKULU", region: "Pesisir Barat Sumatera", dialects: [{ name: "Bahasa Rejang", fam: "Austronesia Kuno", status: "Dominan", pct: 52 }, { name: "Bahasa Serawai", fam: "Melayik", status: "Lokal", pct: 36 }] },
+      "18": { name: "LAMPUNG", region: "Ujung Selatan Sumatera", dialects: [{ name: "Bahasa Lampung Api", fam: "Lampungik", status: "Dominan", pct: 44 }, { name: "Bahasa Lampung Nyo", fam: "Lampungik", status: "Lokal", pct: 38 }] },
+      "19": { name: "KEPULAUAN BANGKA BELITUNG", region: "Kepulauan Bangka Belitung", dialects: [{ name: "Bahasa Melayu Bangka", fam: "Melayik", status: "Dominan", pct: 82 }] },
+      "21": { name: "KEPULAUAN RIAU", region: "Kepulauan Riau", dialects: [{ name: "Bahasa Melayu Kepulauan", fam: "Melayik", status: "Dominan", pct: 76 }] },
+      "31": { name: "DKI JAKARTA", region: "Kawasan Khusus Ibukota", dialects: [{ name: "Bahasa Betawi", fam: "Kreol Melayu", status: "Transisi", pct: 62 }, { name: "Bahasa Sunda Urban", fam: "Sundanik", status: "Minoritas", pct: 25 }] },
+      "32": { name: "JAWA BARAT", region: "Tatar Pasundan", dialects: [{ name: "Bahasa Sunda Priangan", fam: "Sundanik", status: "Dominan", pct: 78 }, { name: "Bahasa Cirebon", fam: "Jawa-Cirebon", status: "Lokal", pct: 22 }] },
+      "33": { name: "JAWA TENGAH", region: "Jawa Tengah", dialects: [{ name: "Bahasa Jawa Mataraman", fam: "Javanik", status: "Dominan", pct: 88 }, { name: "Bahasa Banyumasan", fam: "Javanik", status: "Dominan", pct: 94 }] },
+      "34": { name: "DAERAH ISTIMEWA YOGYAKARTA", region: "D.I. Yogyakarta", dialects: [{ name: "Bahasa Jawa Ngayogyakarta", fam: "Javanik", status: "Dominan", pct: 92 }] },
+      "35": { name: "JAWA TIMUR", region: "Jawa Timur & Madura", dialects: [{ name: "Bahasa Jawa Arekan", fam: "Javanik", status: "Dominan", pct: 82 }, { name: "Bahasa Madura", fam: "Madurik", status: "Dominan", pct: 89 }, { name: "Bahasa Osing", fam: "Javanik", status: "Lokal", pct: 74 }] },
+      "36": { name: "BANTEN", region: "Banten", dialects: [{ name: "Bahasa Sunda Banten", fam: "Sundanik", status: "Dominan", pct: 72 }, { name: "Bahasa Jawa Serang", fam: "Jawa-Banten", status: "Lokal", pct: 28 }] },
+      "51": { name: "BALI", region: "Pulau Dewata", dialects: [{ name: "Bahasa Bali", fam: "Bali-Sasak", status: "Dominan", pct: 91 }] },
+      "52": { name: "NUSA TENGGARA BARAT", region: "Lombok & Sumbawa", dialects: [{ name: "Bahasa Sasak", fam: "Bali-Sasak", status: "Dominan", pct: 90 }, { name: "Bahasa Samawa", fam: "Sumbawa", status: "Lokal", pct: 82 }, { name: "Bahasa Mbojo", fam: "Bima", status: "Lokal", pct: 85 }] },
+      "53": { name: "NUSA TENGGARA TIMUR", region: "Kepulauan Flobamora", dialects: [{ name: "Bahasa Manggarai", fam: "Bima-Sumba", status: "Dominan", pct: 84 }, { name: "Bahasa Dawan", fam: "Timor", status: "Dominan", pct: 86 }, { name: "Bahasa Lamaholot", fam: "Flores Timur", status: "Lokal", pct: 76 }] },
+      "61": { name: "KALIMANTAN BARAT", region: "Kalimantan Barat", dialects: [{ name: "Bahasa Melayu Pontianak", fam: "Melayik", status: "Dominan", pct: 70 }, { name: "Bahasa Dayak Kanayatn", fam: "Dayak Land", status: "Lokal", pct: 64 }] },
+      "62": { name: "KALIMANTAN TENGAH", region: "Kalimantan Tengah", dialects: [{ name: "Bahasa Dayak Ngaju", fam: "Barito", status: "Dominan", pct: 76 }, { name: "Bahasa Dayak Maanyan", fam: "Barito", status: "Lokal", pct: 68 }] },
+      "63": { name: "KALIMANTAN SELATAN", region: "Kalimantan Selatan", dialects: [{ name: "Bahasa Banjar", fam: "Melayik Banjar", status: "Dominan", pct: 92 }] },
+      "64": { name: "KALIMANTAN TIMUR", region: "Kalimantan Timur", dialects: [{ name: "Bahasa Kutai", fam: "Melayik Kutai", status: "Dominan", pct: 66 }, { name: "Bahasa Dayak Kenyah", fam: "Kayanik", status: "Lokal", pct: 54 }] },
+      "65": { name: "KALIMANTAN UTARA", region: "Kalimantan Utara", dialects: [{ name: "Bahasa Dayak Lundayeh", fam: "Kelabitik", status: "Lokal", pct: 59 }, { name: "Bahasa Tidung", fam: "Muritik", status: "Lokal", pct: 52 }] },
+      "71": { name: "SULAWESI UTARA", region: "Sulawesi Utara", dialects: [{ name: "Bahasa Minahasa", fam: "Filipina Selatan", status: "Lokal", pct: 45 }, { name: "Bahasa Mongondow", fam: "Gorontalo-Mongondow", status: "Lokal", pct: 68 }] },
+      "72": { name: "SULAWESI TENGAH", region: "Sulawesi Tengah", dialects: [{ name: "Bahasa Kaili", fam: "Kaili-Pamona", status: "Dominan", pct: 72 }, { name: "Bahasa Pamona", fam: "Kaili-Pamona", status: "Lokal", pct: 70 }] },
+      "73": { name: "SULAWESI SELATAN", region: "Sulawesi Selatan", dialects: [{ name: "Bahasa Bugis", fam: "Sulawesi Selatan", status: "Dominan", pct: 89 }, { name: "Bahasa Makassar", fam: "Makassarik", status: "Dominan", pct: 84 }, { name: "Bahasa Toraja", fam: "Toraja", status: "Lokal", pct: 88 }] },
+      "74": { name: "SULAWESI TENGGARA", region: "Sulawesi Tenggara", dialects: [{ name: "Bahasa Tolaki", fam: "Bungku-Tolaki", status: "Dominan", pct: 74 }, { name: "Bahasa Muna", fam: "Muna-Buton", status: "Lokal", pct: 78 }] },
+      "75": { name: "GORONTALO", region: "Gorontalo", dialects: [{ name: "Bahasa Gorontalo", fam: "Gorontalo-Mongondow", status: "Dominan", pct: 86 }] },
+      "76": { name: "SULAWESI BARAT", region: "Sulawesi Barat", dialects: [{ name: "Bahasa Mandar", fam: "Sulawesi Selatan", status: "Dominan", pct: 85 }] },
+      "81": { name: "MALUKU", region: "Kepulauan Maluku", dialects: [{ name: "Bahasa Melayu Ambon", fam: "Kreol Melayu", status: "Dominan", pct: 90 }, { name: "Bahasa Kei", fam: "Maluku Tengah", status: "Lokal", pct: 78 }] },
+      "82": { name: "MALUKU UTARA", region: "Maluku Utara", dialects: [{ name: "Bahasa Ternate", fam: "Halmahera Utara", status: "Lokal", pct: 62 }, { name: "Bahasa Tidore", fam: "Halmahera Utara", status: "Lokal", pct: 60 }] },
+      "91": { name: "PAPUA BARAT", region: "Papua Barat", dialects: [{ name: "Bahasa Hatam", fam: "Kepala Burung", status: "Lokal", pct: 60 }, { name: "Bahasa Biak", fam: "Austronesia", status: "Lokal", pct: 66 }] },
+      "94": { name: "PAPUA", region: "Papua", dialects: [{ name: "Bahasa Dani", fam: "Trans-Nugini", status: "Dominan", pct: 92 }, { name: "Bahasa Asmat", fam: "Trans-Nugini", status: "Dominan", pct: 88 }] }
+    };
+
+    var bpsHistoricalData = {
+      "2018": { "11": 84.1, "12": 72.3, "13": 89.2, "14": 68.4, "15": 74.2, "16": 71.5, "17": 67.8, "18": 62.4, "19": 75.1, "21": 66.8, "31": 34.2, "32": 80.5, "33": 92.4, "34": 94.6, "35": 89.7, "36": 68.2, "51": 91.8, "52": 89.4, "53": 88.6, "61": 71.5, "62": 78.4, "63": 91.2, "64": 63.8, "65": 59.4, "71": 64.2, "72": 73.1, "73": 88.5, "74": 77.2, "75": 85.3, "76": 84.6, "81": 81.2, "82": 78.5, "91": 72.4, "94": 86.8 },
+      "2021": { "11": 82.5, "12": 70.1, "13": 88.0, "14": 65.2, "15": 72.1, "16": 69.4, "17": 65.2, "18": 59.8, "19": 72.8, "21": 64.1, "31": 30.5, "32": 78.2, "33": 91.0, "34": 93.2, "35": 88.1, "36": 65.4, "51": 90.2, "52": 88.1, "53": 87.2, "61": 69.8, "62": 76.5, "63": 89.8, "64": 61.2, "65": 57.0, "71": 61.8, "72": 71.0, "73": 86.9, "74": 75.4, "75": 83.8, "76": 83.1, "81": 79.5, "82": 76.2, "91": 70.1, "94": 85.2 },
+      "2024": { "11": 80.8, "12": 68.4, "13": 86.7, "14": 63.0, "15": 70.5, "16": 67.2, "17": 63.1, "18": 57.5, "19": 70.4, "21": 62.0, "31": 27.8, "32": 76.1, "33": 89.6, "34": 91.8, "35": 86.5, "36": 63.2, "51": 88.6, "52": 86.7, "53": 85.8, "61": 68.2, "62": 74.9, "63": 88.4, "64": 59.1, "65": 55.2, "71": 59.4, "72": 69.2, "73": 85.3, "74": 73.8, "75": 82.4, "76": 81.7, "81": 77.8, "82": 74.6, "91": 68.5, "94": 83.9 },
+      "2025": { "11": 79.9, "12": 67.5, "13": 85.9, "14": 62.1, "15": 69.8, "16": 66.1, "17": 62.2, "18": 56.4, "19": 69.2, "21": 61.1, "31": 26.5, "32": 75.2, "33": 88.9, "34": 91.0, "35": 85.8, "36": 62.1, "51": 87.8, "52": 85.9, "53": 85.0, "61": 67.4, "62": 74.0, "63": 87.6, "64": 58.0, "65": 54.3, "71": 58.2, "72": 68.4, "73": 84.5, "74": 73.0, "75": 81.6, "76": 81.0, "81": 77.0, "82": 73.9, "91": 67.8, "94": 83.1 }
+    };
+
+    function getMonochromeColor(pct) {
+      if (pct <= 35) return '#cbd5e1';
+      if (pct <= 55) return '#94a3b8';
+      if (pct <= 70) return '#64748b';
+      if (pct <= 80) return '#475569';
+      if (pct <= 90) return '#334155';
+      return '#0f172a';
+    }
+
+    var map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {},
+        layers: []
+      },
+      center: [118.0, -2.5],
+      zoom: 4.4,
+      pitch: 52,
+      maxPitch: 54,
+      minPitch: 50,
+      bearing: -10,
+      dragRotate: false,
+      touchPitch: false,
+      antialias: true
+    });
+
+    var selectedProvinsi = null;
+    var selectedDialectId = null;
+    var currentProvinceMeta = null;
+    var rawGeoJSON = null;
+    var partitionFeatures = [];
+
+    var timelineYears = ["2018", "2021", "2024", "2025"];
+    var currentYearIndex = 2; // Default 2024
+    var isPlaying = false;
+    var playInterval = null;
+
+    map.on('load', function() {
+      map.setLight({
+        anchor: 'viewport',
+        color: '#ffffff',
+        intensity: 0.85,
+        position: [1.5, 210, 40]
+      });
+
+      // 1. LAYER GRATICULE KOORDINAT WGS 84
+      map.addSource('graticule-lines', {
+        type: 'geojson',
+        data: { type: "FeatureCollection", features: [] }
+      });
+
+      map.addSource('graticule-labels', {
+        type: 'geojson',
+        data: { type: "FeatureCollection", features: [] }
+      });
+
+      map.addLayer({
+        id: 'graticule-lines-layer',
+        type: 'line',
+        source: 'graticule-lines',
+        paint: {
+          'line-color': '#0f172a',
+          'line-width': 0.75,
+          'line-opacity': 0.16,
+          'line-dasharray': [2, 4]
+        }
+      });
+
+      map.addLayer({
+        id: 'graticule-labels-layer',
+        type: 'symbol',
+        source: 'graticule-labels',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 9,
+          'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+          'text-anchor': 'bottom-left',
+          'text-offset': [0.35, -0.35]
+        },
+        paint: {
+          'text-color': '#475569',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1
+        }
+      });
+
+      // 2. LAYER POLIGON 3D
+      map.addSource('indonesia-3d', {
+        type: 'geojson',
+        data: { type: "FeatureCollection", features: [] }
+      });
+
+      map.addLayer({
+        id: 'provinsi-extrusion',
+        type: 'fill-extrusion',
+        source: 'indonesia-3d',
+        paint: {
+          'fill-extrusion-color': ['get', 'polyColor'],
+          'fill-extrusion-height': ['get', 'extrudeHeight'],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.96
+        }
+      });
+
+      map.addSource('dialect-partitions', {
+        type: 'geojson',
+        data: { type: "FeatureCollection", features: [] }
+      });
+
+      map.addLayer({
+        id: 'dialect-partition-extrusion',
+        type: 'fill-extrusion',
+        source: 'dialect-partitions',
+        paint: {
+          'fill-extrusion-color': [
+            'case',
+            ['!=', ['literal', selectedDialectId], null],
+            [
+              'case',
+              ['==', ['get', 'id'], ['literal', selectedDialectId]],
+              ['get', 'polyColor'],
+              '#e2e8f0'
+            ],
+            ['get', 'polyColor']
+          ],
+          'fill-extrusion-height': ['get', 'extrudeHeight'],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.96
+        }
+      });
+
+      fetch('https://raw.githubusercontent.com/TheMaggieSimpson/IndonesiaGeoJSON/master/provinsi.json')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          rawGeoJSON = data;
+          updateNusantaraFeatures();
+
+          map.on('click', 'provinsi-extrusion', function(e) {
+            if (!e.features.length) return;
+            var clicked = e.features[0];
+            pilihProvinsi(clicked.properties.nama_baku, clicked.properties.bps_code, e.lngLat);
+          });
+
+          map.on('click', 'dialect-partition-extrusion', function(e) {
+            if (!e.features.length) return;
+            filterByDialect(e.features[0].properties.id);
+          });
+
+          map.on('mouseenter', 'provinsi-extrusion', function() { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', 'provinsi-extrusion', function() { map.getCanvas().style.cursor = ''; });
+          map.on('mouseenter', 'dialect-partition-extrusion', function() { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', 'dialect-partition-extrusion', function() { map.getCanvas().style.cursor = ''; });
+        });
+
+      fetchBpsApiData();
+
+      updateDynamicGraticule();
+      updateDynamicScaleAndNorth();
+
+      map.on('move', updateDynamicScaleAndNorth);
+      map.on('moveend', function() {
+        updateDynamicGraticule();
+        updateDynamicScaleAndNorth();
+      });
+    });
+
+    // ========================================================
+    // ENGINE SKALA DINAMIS & ROTASI ARAH UTARA
+    // ========================================================
+    function updateDynamicScaleAndNorth() {
+      var bearing = map.getBearing();
+      var northSvg = document.getElementById('north-arrow-svg');
+      if (northSvg) {
+        northSvg.style.transform = 'rotate(' + (-bearing) + 'deg)';
+      }
+
+      var center = map.getCenter();
+      var zoom = map.getZoom();
+
+      var metersPerPixel = (156543.03392 * Math.cos(center.lat * Math.PI / 180)) / Math.pow(2, zoom);
+      var targetMeters = metersPerPixel * 85;
+
+      var roundDistances = [
+        1000, 2000, 5000, 10000, 20000, 50000, 
+        100000, 200000, 500000, 1000000, 2000000
+      ];
+
+      var chosenDist = roundDistances[0];
+      for (var i = 0; i < roundDistances.length; i++) {
+        if (targetMeters >= roundDistances[i]) {
+          chosenDist = roundDistances[i];
+        } else {
+          break;
+        }
+      }
+
+      var calculatedWidthPx = chosenDist / metersPerPixel;
+      var distKm = chosenDist / 1000;
+
+      var scaleLine = document.getElementById('scale-bar-line');
+      var scaleDist = document.getElementById('scale-label-dist');
+
+      if (scaleLine && scaleDist) {
+        scaleLine.style.width = Math.round(calculatedWidthPx) + 'px';
+        scaleDist.innerText = distKm >= 1 ? (distKm + ' km') : (chosenDist + ' m');
+      }
+    }
+
+    // ========================================================
+    // ENGINE GRATICULE KOORDINAT DINAMIS (WGS 84 / EPSG:4326)
+    // ========================================================
+    function updateDynamicGraticule() {
+      if (!map.getSource('graticule-lines')) return;
+
+      var bounds = map.getBounds();
+      var zoom = map.getZoom();
+
+      var step = 5.0; // Skala Nusantara Nasional
+      if (zoom >= 7) {
+        step = 0.5;   // Skala Detail Lokal
+      } else if (zoom >= 5.2) {
+        step = 1.0;   // Skala Pulau / Provinsi
+      }
+
+      var west = Math.floor(bounds.getWest() / step) * step;
+      var east = Math.ceil(bounds.getEast() / step) * step;
+      var south = Math.floor(bounds.getSouth() / step) * step;
+      var north = Math.ceil(bounds.getNorth() / step) * step;
+
+      south = Math.max(south, -15);
+      north = Math.min(north, 12);
+      west = Math.max(west, 92);
+      east = Math.min(east, 144);
+
+      var lineFeatures = [];
+      var labelFeatures = [];
+
+      for (var lng = west; lng <= east; lng += step) {
+        var roundedLng = parseFloat(lng.toFixed(2));
+        lineFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [[roundedLng, south], [roundedLng, north]]
+          }
+        });
+
+        labelFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [roundedLng, south]
+          },
+          properties: {
+            label: Math.abs(roundedLng) + "°" + (roundedLng >= 0 ? "E" : "W")
+          }
+        });
+      }
+
+      for (var lat = south; lat <= north; lat += step) {
+        var roundedLat = parseFloat(lat.toFixed(2));
+        lineFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [[west, roundedLat], [east, roundedLat]]
+          }
+        });
+
+        var latStr = Math.abs(roundedLat) + "°" + (roundedLat > 0 ? "N" : (roundedLat < 0 ? "S" : "EQ"));
+        labelFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [west, roundedLat]
+          },
+          properties: {
+            label: latStr
+          }
+        });
+      }
+
+      map.getSource('graticule-lines').setData({
+        type: "FeatureCollection",
+        features: lineFeatures
+      });
+
+      map.getSource('graticule-labels').setData({
+        type: "FeatureCollection",
+        features: labelFeatures
+      });
+    }
+
+    async function fetchBpsApiData() {
+      if (!BPS_API_KEY || BPS_API_KEY === "MASUKKAN_KEY_BPS_ANDA") return;
+
+      try {
+        for (var i = 0; i < BPS_ENDPOINTS.length; i++) {
+          var ep = BPS_ENDPOINTS[i];
+          var url = `https://webapi.bps.go.id/v1/api/list/model/data/lang/ind/domain/0000/var/2526/th/${ep.thId}/key/${BPS_API_KEY}`;
+          var res = await fetch(url);
+          var json = await res.json();
+          if (json.status === "OK" && json.datacontent) {
+            Object.keys(json.datacontent).forEach(function(k) {
+              var code = k.substring(5, 7);
+              if (bpsHistoricalData[ep.year]) {
+                bpsHistoricalData[ep.year][code] = parseFloat(json.datacontent[k]);
+              }
+            });
+          }
+        }
+        updateNusantaraFeatures();
+      } catch (err) {
+        console.warn("Menggunakan matriks BPS lokal:", err);
+      }
+    }
+
+    function matchBpsCode(rawName) {
+      var n = rawName.toUpperCase();
+      for (var code in BPS_PROV_MAP) {
+        if (n.includes(BPS_PROV_MAP[code].name)) return code;
+      }
+      return null;
+    }
+
+    function updateNusantaraFeatures() {
+      if (!rawGeoJSON) return;
+
+      var currentYear = timelineYears[currentYearIndex];
+      var yearData = bpsHistoricalData[currentYear] || {};
+
+      var features = [];
+      rawGeoJSON.features.forEach(function(feat) {
+        var rawName = (feat.properties.Propinsi || feat.properties.NAME_1 || feat.properties.name || "").toUpperCase();
+        var code = matchBpsCode(rawName);
+        if (!code) return;
+
+        var pct = yearData[code] || 60;
+        var height = pct * 1000;
+        var color = getMonochromeColor(pct);
+
+        var cleanedGeom = filterSmallPolygons(feat.geometry, 800000000);
+        if (!cleanedGeom) return;
+
+        feat.geometry = cleanedGeom;
+        feat.properties.nama_baku = BPS_PROV_MAP[code].name;
+        feat.properties.bps_code = code;
+        feat.properties.pct_value = pct;
+        feat.properties.extrudeHeight = height;
+        feat.properties.polyColor = color;
+        features.push(feat);
+      });
+
+      if (selectedProvinsi && currentProvinceMeta) {
+        pecahWilayahDialek(selectedProvinsi, currentProvinceMeta.code);
+        renderSidebarContent(currentProvinceMeta.code);
+      } else {
+        map.getSource('indonesia-3d').setData({
+          type: "FeatureCollection",
+          features: features
+        });
+      }
+    }
+
+    function filterSmallPolygons(geom, minAreaMeters) {
+      if (geom.type === 'Polygon') {
+        var a = turf.area(turf.polygon(geom.coordinates));
+        return a >= minAreaMeters ? geom : null;
+      }
+      if (geom.type === 'MultiPolygon') {
+        var validCoords = geom.coordinates.filter(function(polyCoords) {
+          return turf.area(turf.polygon(polyCoords)) >= minAreaMeters;
+        });
+        if (validCoords.length === 0) return null;
+        if (validCoords.length === 1) return { type: 'Polygon', coordinates: validCoords[0] };
+        return { type: 'MultiPolygon', coordinates: validCoords };
+      }
+      return geom;
+    }
+
+    function pecahWilayahDialek(namaProv, code) {
+      var targetFeat = rawGeoJSON.features.find(function(f) {
+        var rawName = (f.properties.Propinsi || f.properties.NAME_1 || f.properties.name || "").toUpperCase();
+        return matchBpsCode(rawName) === code;
+      });
+
+      var meta = BPS_PROV_MAP[code];
+      if (!targetFeat || !meta) return;
+
+      map.getSource('indonesia-3d').setData({ type: "FeatureCollection", features: [] });
+
+      var bbox = turf.bbox(targetFeat);
+      var width = bbox[2] - bbox[0];
+      var height = bbox[3] - bbox[1];
+
+      var points = meta.dialects.map(function(d, idx) {
+        var offsetLng = bbox[0] + width * (0.25 + (idx * 0.25));
+        var offsetLat = bbox[1] + height * (0.3 + ((idx % 2) * 0.35));
+        var calcHeight = d.pct * 1000;
+
+        return turf.point([offsetLng, offsetLat], {
+          id: 'dl-' + idx,
+          name: d.name,
+          fam: d.fam,
+          status: d.status,
+          extrudeHeight: calcHeight,
+          polyColor: getMonochromeColor(d.pct)
+        });
+      });
+
+      partitionFeatures = [];
+      try {
+        var voronoiPolys = turf.voronoi(turf.featureCollection(points), { bbox: bbox });
+        voronoiPolys.features.forEach(function(poly, idx) {
+          if (!poly || !points[idx]) return;
+          var clipped = turf.intersect(poly, targetFeat);
+          if (clipped) {
+            clipped.properties = points[idx].properties;
+            partitionFeatures.push(clipped);
+          }
+        });
+      } catch (err) {
+        partitionFeatures.push(targetFeat);
+      }
+
+      map.getSource('dialect-partitions').setData({
+        type: "FeatureCollection",
+        features: partitionFeatures
+      });
+    }
+
+    function filterByDialect(dialectId) {
+      if (selectedDialectId === dialectId) {
+        selectedDialectId = null;
+        document.querySelectorAll('.dialect-card').forEach(function(c) {
+          c.classList.remove('selected', 'dimmed');
+        });
+        map.setPaintProperty('dialect-partition-extrusion', 'fill-extrusion-color', ['get', 'polyColor']);
+        return;
+      }
+
+      selectedDialectId = dialectId;
+      document.querySelectorAll('.dialect-card').forEach(function(card) {
+        if (card.dataset.id === dialectId) {
+          card.classList.add('selected');
+          card.classList.remove('dimmed');
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+          card.classList.remove('selected');
+          card.classList.add('dimmed');
+        }
+      });
+
+      map.setPaintProperty('dialect-partition-extrusion', 'fill-extrusion-color', [
+        'case',
+        ['==', ['get', 'id'], dialectId],
+        ['get', 'polyColor'],
+        '#e2e8f0'
+      ]);
+    }
+
+    function pilihProvinsi(nama, code, lngLat) {
+      if (selectedProvinsi === nama) {
+        resetView();
+        return;
+      }
+
+      selectedProvinsi = nama;
+      selectedDialectId = null;
+      currentProvinceMeta = { name: nama, code: code };
+
+      document.getElementById('magazine-story').classList.add('hidden');
+      document.getElementById('editorial-left').classList.add('hidden');
+      document.getElementById('top-center-cluster').style.display = 'none';
+
+      renderSidebarContent(code);
+      document.getElementById('sidebar-panel').classList.add('open');
+
+      pecahWilayahDialek(nama, code);
+
+      var flyLng = lngLat.lng !== undefined ? lngLat.lng : lngLat[0];
+      var flyLat = lngLat.lat !== undefined ? lngLat.lat : lngLat[1];
+
+      map.flyTo({
+        center: [flyLng + 0.35, flyLat],
+        zoom: 6.4,
+        pitch: 52,
+        bearing: -10,
+        duration: 1200
+      });
+    }
+
+    function renderSidebarContent(code) {
+      var meta = BPS_PROV_MAP[code];
+      if (!meta) return;
+
+      var t = i18n[currentLang];
+      var currentYear = timelineYears[currentYearIndex];
+      var pct = (bpsHistoricalData[currentYear] && bpsHistoricalData[currentYear][code]) ? bpsHistoricalData[currentYear][code] : 0;
+
+      document.getElementById('sb-prov-name').innerText = meta.name;
+      document.getElementById('sb-sub-info').innerText = meta.region;
+      document.getElementById('sb-pct-val').innerText = pct.toFixed(1) + '%';
+      document.getElementById('sb-year-lbl').innerText = t.surveyYearPrefix + currentYear;
+
+      var badgeEl = document.getElementById('sb-status-badge');
+      if (pct >= 80) {
+        badgeEl.className = 'status-badge badge-aman';
+        badgeEl.innerText = t.statusHigh;
+      } else if (pct >= 60) {
+        badgeEl.className = 'status-badge badge-rentan';
+        badgeEl.innerText = t.statusMid;
+      } else {
+        badgeEl.className = 'status-badge badge-kritis';
+        badgeEl.innerText = t.statusLow;
+      }
+
+      var list = document.getElementById('dialect-list-container');
+      list.innerHTML = '';
+
+      meta.dialects.forEach(function(d, idx) {
+        var c = document.createElement('div');
+        c.className = 'dialect-card';
+        c.dataset.id = 'dl-' + idx;
+        c.onclick = function() { filterByDialect('dl-' + idx); };
+
+        c.innerHTML = `
+          <div class="dialect-top">
+            <div>
+              <div class="dialect-name">${d.name}</div>
+              <div class="dialect-family">${t.family}: ${d.fam}</div>
+            </div>
+            <span class="status-badge badge-rentan">${d.status}</span>
+          </div>
+          <div class="dialect-grid">
+            <div class="dg-item">
+              <span class="lbl">${t.estSpeaker}</span>
+              <span class="val">${d.pct}%</span>
+            </div>
+            <div class="dg-item">
+              <span class="lbl">${t.barHeight}</span>
+              <span class="val">${(d.pct * 1000).toLocaleString(currentLang === 'id' ? 'id-ID' : 'en-US')} m</span>
+            </div>
+          </div>
+        `;
+        list.appendChild(c);
+      });
+    }
+
+    function onTimelineChange(val) {
+      currentYearIndex = parseInt(val);
+      var year = timelineYears[currentYearIndex];
+      var t = i18n[currentLang];
+      document.getElementById('timeline-year-text').innerText = year;
+      
+      var badge = document.getElementById('timeline-status-badge');
+      if (year === "2025") {
+        badge.innerText = t.badgeLatest;
+      } else if (year === "2024") {
+        badge.innerText = t.badgeCurrent;
+      } else {
+        badge.innerText = t.badgeHistorical + " " + year;
+      }
+
+      updateNusantaraFeatures();
+    }
+
+    function togglePlayPause() {
+      var btn = document.getElementById('btn-play-pause');
+      if (isPlaying) {
+        clearInterval(playInterval);
+        isPlaying = false;
+        btn.innerText = '▶';
+      } else {
+        isPlaying = true;
+        btn.innerText = '⏸';
+        playInterval = setInterval(function() {
+          currentYearIndex = (currentYearIndex + 1) % timelineYears.length;
+          document.getElementById('timeline-slider').value = currentYearIndex;
+          onTimelineChange(currentYearIndex);
+        }, 1800);
+      }
+    }
+
+    function zoomInMap() { map.zoomIn({ duration: 300 }); }
+    function zoomOutMap() { map.zoomOut({ duration: 300 }); }
+
+    function resetView() {
+      selectedProvinsi = null;
+      selectedDialectId = null;
+      currentProvinceMeta = null;
+
+      if (isPlaying) togglePlayPause();
+
+      document.getElementById('sidebar-panel').classList.remove('open');
+      document.getElementById('magazine-story').classList.remove('hidden');
+      document.getElementById('editorial-left').classList.remove('hidden');
+      document.getElementById('top-center-cluster').style.display = 'flex';
+
+      map.getSource('dialect-partitions').setData({ type: "FeatureCollection", features: [] });
+      updateNusantaraFeatures();
+
+      map.flyTo({
+        center: [118.0, -2.5],
+        zoom: 4.4,
+        pitch: 52,
+        bearing: -10,
+        duration: 1200
+      });
+    }
+  </script>
+</body>
+</html>
